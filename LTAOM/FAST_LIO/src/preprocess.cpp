@@ -63,12 +63,18 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
   case HESAI128:
     hesai128_handler(msg);
     break;
-  
+
+    // === 新增分支 ===
+    case OUSTER_MULRAN:
+      mulran_handler(msg);
+      break;
+    // ===============
+
   default:
     printf("Error LiDAR Type");
     break;
   }
-  *pcl_out = pl_surf;
+  *pcl_out = pl_surf; //输出预处理好的点云
 }
 
 void Preprocess::avia_handler(const livox_ros_driver::CustomMsg::ConstPtr &msg)
@@ -174,6 +180,10 @@ void Preprocess::avia_handler(const livox_ros_driver::CustomMsg::ConstPtr &msg)
   }
 }
 
+
+// 格式转换：从 ROS 消息转成 PCL 点云。
+// 时间戳提取：这是最关键的一步，为了后续去畸变。
+// 降采样与过滤：丢掉不需要的点，减少计算量。
 #define MAX_LINE_NUM 128
 
 void Preprocess::ouster_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
@@ -181,9 +191,18 @@ void Preprocess::ouster_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
   pl_surf.clear();
   pl_corn.clear();
   pl_full.clear();
-  pcl::PointCloud<ouster_ros::Point> pl_orig;
-  pcl::fromROSMsg(*msg, pl_orig);
+  pcl::PointCloud<ouster_ros::Point> pl_orig;     //通常包含 x, y, z, intensity, t (纳秒时间), ring (线号) 等
+  pcl::fromROSMsg(*msg, pl_orig);     //把从ros中传来的msg转入到定义的ouster point中
   int plsize = pl_orig.size();
+
+  // === 新增：打印点云数量，方便我们看是不是读到了 0 个点 ===
+    ROS_INFO("MulRan Handler: Parsed point cloud size: %d", plsize);
+  // === 新增：如果点云为空，直接返回，防止崩溃 ===
+  if (plsize == 0) {
+            ROS_WARN("MulRan Handler: Received an empty cloud! Skipping...");
+            return;
+  }
+  
   pl_corn.reserve(plsize);
   pl_surf.reserve(plsize);
 
@@ -193,11 +212,11 @@ void Preprocess::ouster_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
   float yaw_last[MAX_LINE_NUM]={0.0};  // yaw of last scan point
   float time_last[MAX_LINE_NUM]={0.0}; // last offset time
 
-  if (pl_orig.points[plsize - 1].t > 0)
+  if (pl_orig.points[plsize - 1].t > 0)     //Ouster 雷达通常硬件自带高精度时间戳（字段 t）。这里检查最后一个点的 t 是否大于 0，来判断驱动是否正确输出了时间信息。
   {
     given_offset_time = true;
   }
-  else
+  else      ////  如果没时间戳，就通过几何角度估算时间
   {
     given_offset_time = false;
     memset(is_first, true, sizeof(is_first));
@@ -214,7 +233,7 @@ void Preprocess::ouster_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
     }
   }
 
-  if (feature_enabled)
+  if (feature_enabled)  //特征提取 或 直接使用 ， FAST-LIO 直接使用降采样后的稠密点云（Surf points），不依赖传统的边缘特征提取。
   {
     for (int i = 0; i < N_SCANS; i++)
     {
@@ -268,28 +287,35 @@ void Preprocess::ouster_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       give_feature(pl, types);
     }
   }
-  else
+  else   //预处理的核心循环
   {
     double time_stamp = msg->header.stamp.toSec();
     // cout << "===================================" << endl;
     // printf("Pt size = %d, N_SCANS = %d\r\n", plsize, N_SCANS);
-//    double scan_ts_max = -100000;
-//    double scan_ts_min = 100000;
+    //    double scan_ts_max = -100000;   
+    //    double scan_ts_min = 100000;
     for (int i = 0; i < pl_orig.points.size(); i++)
     {
+      // A. 降采样
       if (i % point_filter_num != 0) continue;
 
+      // B. 盲区过滤 (去掉车身周围太近的噪点)
       double range = pl_orig.points[i].x * pl_orig.points[i].x + pl_orig.points[i].y * pl_orig.points[i].y + pl_orig.points[i].z * pl_orig.points[i].z;
       
       if (range < blind) continue;
 
+      // C. 数据拷贝
       Eigen::Vector3d pt_vec;
       PointType added_pt;
       added_pt.x = pl_orig.points[i].x;
       added_pt.y = pl_orig.points[i].y;
       added_pt.z = pl_orig.points[i].z;
       added_pt.intensity = pl_orig.points[i].intensity;
+
+      // D. 时间戳处理 (Hack: 用 curvature 存时间) Ouster 的 t 单位通常是纳秒（ns）。代码把它除以 1e6 变成 毫秒 (ms)，然后存入 curvature 字段。
+      // 为什么是毫秒？ 因为 IMU 处理和去畸变的代码里，通常统一用毫秒作为相对时间的单位。
       added_pt.curvature = pl_orig.points[i].t / 1000000.0; // units: ms
+    
       added_pt.normal_x = 0;
       added_pt.normal_y = 0;
       added_pt.normal_z = 0;
@@ -299,11 +325,11 @@ void Preprocess::ouster_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
       if (yaw_angle <= -180.0)
         yaw_angle += 360.0;
 
-//      added_pt.curvature = pl_orig.points[i].t / 1e6;
-//      std::cout << "added_pt.curvature: " << added_pt.curvature << std::endl;
+      //      added_pt.curvature = pl_orig.points[i].t / 1e6;
+      //      std::cout << "added_pt.curvature: " << added_pt.curvature << std::endl;
 
       int layer = 0;
-      if (!given_offset_time)
+      if (!given_offset_time) //补救措施：如果没有时间戳怎么办，估算出来
       {
         double yaw_angle = atan2(added_pt.y, added_pt.x) * 57.2957;
         if (is_first[layer])
@@ -325,25 +351,103 @@ void Preprocess::ouster_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
         {
           added_pt.curvature = (yaw_fp[layer]-yaw_angle+360.0) / omega_l;
         }
-//        if (added_pt.curvature < time_last[layer])  added_pt.curvature+=360.0/omega_l;
+        //        if (added_pt.curvature < time_last[layer])  added_pt.curvature+=360.0/omega_l;
 
         yaw_last[layer] = yaw_angle;
         time_last[layer]=added_pt.curvature;
       }
-//      std::cout << "t: " << added_pt.curvature << std::endl;
-//      scan_ts_max = scan_ts_max > added_pt.curvature? scan_ts_max : added_pt.curvature;
-//      scan_ts_min = scan_ts_min < added_pt.curvature? scan_ts_min : added_pt.curvature;
+        //      std::cout << "t: " << added_pt.curvature << std::endl;
+        //      scan_ts_max = scan_ts_max > added_pt.curvature? scan_ts_max : added_pt.curvature;
+        //      scan_ts_min = scan_ts_min < added_pt.curvature? scan_ts_min : added_pt.curvature;
 
-      pl_surf.points.push_back(added_pt);
+      pl_surf.points.push_back(added_pt);  //最后，处理好的点被放入 pl_surf。这个 pl_surf 之后会被传回 laserMapping.cpp，进入卡尔曼滤波流程。
     }
-    //0-100ms
-//    std::cout << "added_pt.curvature max: " << scan_ts_max << std::endl;
-//    std::cout << "added_pt.curvature min: " << scan_ts_min << std::endl;
-
+        //0-100ms
+        //    std::cout << "added_pt.curvature max: " << scan_ts_max << std::endl;
+        //    std::cout << "added_pt.curvature min: " << scan_ts_min << std::endl;
   }
-  // pub_func(pl_surf, pub_full, msg->header.stamp);
-  // pub_func(pl_surf, pub_corn, msg->header.stamp);
+        // pub_func(pl_surf, pub_full, msg->header.stamp);
+        // pub_func(pl_surf, pub_corn, msg->header.stamp);
 }
+
+
+void Preprocess::mulran_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
+{
+    // 1. 打印确认日志
+    ROS_WARN_ONCE("\033[1;32m >>>>>>>>>> [LTAOM] MulRan Handler IS RUNNING (Manual Mode)! <<<<<<<<<< \033[0m");
+
+    pl_surf.clear();
+    pl_corn.clear();
+    pl_full.clear();
+
+    // 2. 准备手动解析参数
+    int num_points = msg->width * msg->height;
+    int point_step = msg->point_step; // 每个点占多少字节
+    const uint8_t* base_ptr = msg->data.data(); // 获取原始数据的内存指针
+
+    // 动态查找字段偏移量 (比硬编码更安全)
+    int off_x = -1, off_y = -1, off_z = -1, off_i = -1, off_t = -1;
+    for (const auto& field : msg->fields) {
+        if (field.name == "x") off_x = field.offset;
+        else if (field.name == "y") off_y = field.offset;
+        else if (field.name == "z") off_z = field.offset;
+        else if (field.name == "intensity") off_i = field.offset;
+        else if (field.name == "t") off_t = field.offset;
+    }
+
+    // 检查是否缺少关键字段
+    if (off_x == -1 || off_y == -1 || off_z == -1 || off_t == -1) {
+        ROS_ERROR_THROTTLE(1.0, "MulRan Handler: Missing fields! x:%d y:%d z:%d t:%d", off_x, off_y, off_z, off_t);
+        return;
+    }
+
+    // 预分配内存，加速运行
+    pl_surf.reserve(num_points);
+
+    // 3. 核心循环：手动遍历每一个点
+    float x, y, z, intensity;
+    uint32_t t_raw;
+
+    for (int i = 0; i < num_points; i++) {
+        // 计算当前点在内存中的位置
+        const uint8_t* ptr = base_ptr + i * point_step;
+
+        // --- 降采样逻辑 (提速) ---
+        if (i % point_filter_num != 0) continue;
+
+        // --- 数据拷贝 (使用 memcpy 防止内存对齐崩溃) ---
+        memcpy(&x, ptr + off_x, sizeof(float));
+        memcpy(&y, ptr + off_y, sizeof(float));
+        memcpy(&z, ptr + off_z, sizeof(float));
+        
+        // 盲区过滤
+        if ((x*x + y*y + z*z) < blind) continue;
+
+        // 读取其他数据
+        if (off_i != -1) memcpy(&intensity, ptr + off_i, sizeof(float));
+        else intensity = 0.0f;
+
+        memcpy(&t_raw, ptr + off_t, sizeof(uint32_t));
+
+        // --- 组装成 LTAOM 需要的格式 ---
+        PointType added_pt;
+        added_pt.x = x;
+        added_pt.y = y;
+        added_pt.z = z;
+        added_pt.intensity = intensity;
+        
+        // 关键：纳秒转毫秒，存入 curvature
+        added_pt.curvature = t_raw / 1000000.0; 
+
+        // 压入结果队列
+        pl_surf.points.push_back(added_pt);
+    }
+    
+    // 调试日志：每隔几秒告诉我们它还活着，并且处理了多少点
+    ROS_INFO_THROTTLE(2.0, "MulRan Handler: Processed %lu points. First time: %.2f ms", pl_surf.size(), pl_surf.points.empty() ? 0.0 : pl_surf.points[0].curvature);
+}
+
+
 
 void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
 {

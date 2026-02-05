@@ -118,8 +118,8 @@ mutex mtx_buffer;
 condition_variable sig_buffer;
 
 string root_dir = ROOT_DIR;
-string map_file_path, lid_topic, imu_topic;
 double time_offset_from_lidar = 0.0f;
+string map_file_path, lid_topic, imu_topic;
 // int iterCount, feats_down_size, NUM_MAX_ITERATIONS, laserCloudValidNum,\
 //     effct_feat_num, time_log_counter, publish_count = 0;
 
@@ -382,22 +382,26 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
 {
     mtx_buffer.lock();
     scan_count ++;
-    double preprocess_start_time = omp_get_wtime();
+
+    double preprocess_start_time = omp_get_wtime(); //简单的逻辑检查，确保数据是按时间顺序来的。
     double time_offset = 0.0f;
     if (time_offset_from_lidar != 0) time_offset = time_offset_from_lidar;
-    if (msg->header.stamp.toSec() + time_offset< last_timestamp_lidar)
+    if (msg->header.stamp.toSec() + time_offset< last_timestamp_lidar) //// 如果这一帧的时间比上一帧还早，说明 ROS 包重播了或者时间倒流了
     {
         ROS_ERROR("lidar loop back, clear buffer");
         lidar_buffer.clear();
     }
+
     //std::cout << "time_offset: " << time_offset << std::endl;
-    PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
+    PointCloudXYZI::Ptr  ptr(new PointCloudXYZI()); //创建一个空的 PCL 点云对象 (智能指针)
     if (p_pre->lidar_type == XGRIDS)
-        pcl::fromROSMsg(*msg, *ptr);
+        pcl::fromROSMsg(*msg, *ptr); //原始 msg 里的点被遍历，没用的点（盲区、降采样过滤掉的）被丢弃，有用的点被复制到 ptr 指向的内存里。
     else
         p_pre->process(msg, ptr);
-    lidar_buffer.push_back(ptr);
-    time_buffer.push_back(msg->header.stamp.toSec() + time_offset);
+
+    lidar_buffer.push_back(ptr); //把处理好的点云指针 ptr 塞到 lidar_buffer 的队尾。
+    time_buffer.push_back(msg->header.stamp.toSec() + time_offset);//把这一帧的时间戳塞到 time_buffer 的队尾。
+    
     last_timestamp_lidar = msg->header.stamp.toSec() + time_offset;
     s_plot11[scan_count] = omp_get_wtime() - preprocess_start_time;
     mtx_buffer.unlock();
@@ -443,7 +447,7 @@ void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
         flg_reset = true;
     }
 
-    last_timestamp_imu = timestamp;
+    last_timestamp_imu = timestamp;                            
 
     imu_buffer.push_back(msg);
     // cout<<"got imu: "<<timestamp<<" imu size "<<imu_buffer.size()<<endl;
@@ -1556,18 +1560,28 @@ void load_prior_map_and_info(PointCloudXYZI::Ptr &priormap)
 }
 
 
-#ifdef as_node
+    #ifdef as_node
+// 情况 A: 编译为 Nodelet 插件模式
+// 此时不能有 main 函数，因为 Nodelet Manager 已经有 main 函数了。
+// 我们把原来的 main 改名为 mainLIOFunction，供插件代码调用。
 int mainLIOFunction()
 {
-    int argc; char** argv;
-#else
-int main(int argc, char** argv)
-{
-#endif
-    ros::init(argc, argv, "laserMapping");
-    ros::NodeHandle nh;
-
-    nh.param<bool>("dense_map_enable",dense_map_en,1);
+    int argc; char** argv; // 定义假的参数，因为 ros::init 可能已经被 Manager 调用过了
+    #else
+    // 情况 B: 编译为普通可执行文件 (Standalone)
+    // 标准的 C++ 入口，系统直接从这里开始执行。
+    int main(int argc, char** argv)
+    {
+    #endif
+    // 1. ROS 初始化
+    ros::init(argc, argv, "laserMapping"); //告诉 ROS 系统我上线了，名字叫 laserMapping
+    ros::NodeHandle nh;//创建一个句柄 nh，以后要和 ROS 系统交互（发消息、收消息、读参数）都得通过它。
+   
+    //2. 读取参数 (从 yaml 文件或 launch 文件)
+    //YAML 的作用：存“复杂且固定”的数据，有些参数非常繁琐，或者结构复杂（比如矩阵、列表、几十个 PID 参数）， 写Launch 文件（XML 格式）极其难看且难以维护。
+    //如果 YAML 里也有个叫 map_file_path 的参数，Launch 里的这行会覆盖掉 YAML 里的值（后加载的覆盖先加载的）。
+    //nh.param<类型>("参数名", 变量名, 默认值)
+    nh.param<bool>("dense_map_enable",dense_map_en,1);  //去参数服务器找叫 dense_map_enable 的参数，找到了就赋值给 dense_map_en；如果没找到，就默认它是 1 (true)。
     nh.param<int>("max_iteration",NUM_MAX_ITERATIONS,4);
     nh.param<string>("map_file_path",map_file_path,"");
     nh.param<string>("common/lid_topic",lid_topic,"/livox/lidar");
@@ -1594,51 +1608,58 @@ int main(int argc, char** argv)
     nh.param<double>("correction_ver_thr", correction_ver_thr, 0.45);
     nh.param<string>("SaveDir", save_directory, "");
     nh.param<double>("correction_dis_interval", correction_dis_interval, 50);
-#ifdef save_for_mapconsistency_eva
-    p_pre->point_filter_num = 1;
-    scanpose_cor_filename = save_directory + "scanposes_corrected.txt";
-#endif
-    cout<<"p_pre->lidar_type "<<p_pre->lidar_type<<endl;
+    #ifdef save_for_mapconsistency_eva
+        p_pre->point_filter_num = 1;
+        scanpose_cor_filename = save_directory + "scanposes_corrected.txt";
+    #endif
+    cout<<"p_pre->lidar_type "<<p_pre->lidar_type<<endl; //检查雷达类型是否设置正确
 
-    path.header.stamp    = ros::Time::now();
-    path.header.frame_id ="camera_init";
 
-    /*** variables definition ***/
+
+    /*** variables definition 初始化全局变量、配置算法参数和准备可视化消息。 ***/  
     //PointCloudXYZI::Ptr corr_normvect(new PointCloudXYZI(100000, 1));
     int effect_feat_num = 0, frame_num = 0;
     double deltaT, deltaR, aver_time_consu = 0, aver_time_icp = 0, aver_time_match = 0, aver_time_incre = 0, aver_time_solve = 0, aver_time_const_H_time = 0;
     bool flg_EKF_converged, EKF_stop_flg = 0;
 
-    FOV_DEG = (fov_deg + 10.0) > 179.9 ? 179.9 : (fov_deg + 10.0);
+    FOV_DEG = (fov_deg + 10.0) > 179.9 ? 179.9 : (fov_deg + 10.0); //预计算视场角参数
     HALF_FOV_COS = cos((FOV_DEG) * 0.5 * PI_M / 180.0);
 
-    _featsArray.reset(new PointCloudXYZI());
+    path.header.stamp    = ros::Time::now(); //path用来存储机器人的历史轨迹。
+    path.header.frame_id ="camera_init"; //在主循环里，程序会不断往 path.poses 里塞新的位姿，然后在 Rviz 里你就能看到一条轨迹线。
 
-    memset(point_selected_surf, true, sizeof(point_selected_surf));
+    _featsArray.reset(new PointCloudXYZI()); //给智能指针 _featsArray 分配内存，创建一个空的点云对象，准备用来存后面提取出来的特征点。
+
+    memset(point_selected_surf, true, sizeof(point_selected_surf)); //用 memset 函数快速把大数组填满初始值。
     memset(res_last, -1000.0f, sizeof(res_last));
-    downSizeFilterSurf.setLeafSize(filter_size_surf_min, filter_size_surf_min, filter_size_surf_min);
-    downSizeFilterMap.setLeafSize(filter_size_map_min, filter_size_map_min, filter_size_map_min);
 
+    downSizeFilterSurf.setLeafSize(filter_size_surf_min, filter_size_surf_min, filter_size_surf_min); //用于 当前帧，配置体素滤波器，设置 PCL 库中 VoxelGrid 滤波器的格子大小。
+    downSizeFilterMap.setLeafSize(filter_size_map_min, filter_size_map_min, filter_size_map_min);//用于 地图
+
+    // 3. 初始化 IMU 处理模块 
     shared_ptr<ImuProcess> p_imu(new ImuProcess());
     // p_imu->set_extrinsic(V3D(0.04165, 0.02326, -0.0284));   //avia
     // p_imu->set_extrinsic(V3D(0.05512, 0.02226, -0.0297));   //horizon
     Lidar_T_wrt_IMU<<VEC_FROM_ARRAY(extrinT);
     Lidar_R_wrt_IMU<<MAT_FROM_ARRAY(extrinR);
-    p_imu->set_extrinsic(Lidar_T_wrt_IMU, Lidar_R_wrt_IMU);
+    p_imu->set_extrinsic(Lidar_T_wrt_IMU, Lidar_R_wrt_IMU); //// 设置 IMU 到雷达的外参 (旋转和平移)
     p_imu->set_gyr_cov(V3D(gyr_cov, gyr_cov, gyr_cov));
     p_imu->set_acc_cov(V3D(acc_cov, acc_cov, acc_cov));
     p_imu->set_gyr_bias_cov(V3D(b_gyr_cov, b_gyr_cov, b_gyr_cov));
     p_imu->set_acc_bias_cov(V3D(b_acc_cov, b_acc_cov, b_acc_cov));
     if (p_pre->lidar_type == XGRIDS) p_imu->disable_undistort = true;
 
-    double epsi[23] = {0.001};
+    double epsi[23] = {0.001}; //设置 收敛阈值，如果每一次迭代计算出来的结果变化小于 0.001，停止迭代
     fill(epsi, epsi+23, 0.001);
-    kf.init_dyn_share(get_f, df_dx, df_dw, h_share_model, NUM_MAX_ITERATIONS, epsi);
+
+    // 4. 初始化卡尔曼滤波器 (KF)
+    kf.init_dyn_share(get_f, df_dx, df_dw, h_share_model, NUM_MAX_ITERATIONS, epsi); //迭代需要两个停止条件：1次数，2收敛阈值
+
+    // 5. 打开日志文件
     /*** debug record ***/
     FILE *fp;
     string pos_log_dir = root_dir + "/Log/pos_log.txt";
     fp = fopen(pos_log_dir.c_str(),"w");
-
     fout_pre.open(DEBUG_FILE_DIR("mat_pre.txt"),ios::out);
     fout_out.open(DEBUG_FILE_DIR("mat_out.txt"),ios::out);
     fout_dbg.open(save_directory + "lio_debug.txt",ios::out);
@@ -1650,38 +1671,41 @@ int main(int argc, char** argv)
     time_ikdrebuild_thread.open(save_directory + "times_ikdrebuild_LTAOM.txt",ios::out);
     time_ikdrebuild_thread.precision(std::numeric_limits<double>::max_digits10);
 
-#ifdef save_for_mapconsistency_eva
-    rosbag::Bag bag;
-    bag.open(save_directory + "undistoted_scans.bag", rosbag::bagmode::Write);
-#endif
+    #ifdef save_for_mapconsistency_eva
+        rosbag::Bag bag;
+        bag.open(save_directory + "undistoted_scans.bag", rosbag::bagmode::Write);
+    #endif
 
-#ifdef LoadBag
-    std::thread loadbag {msg_callbacks};
-#else
-
+    #ifdef LoadBag
+        std::thread loadbag {msg_callbacks};
+    #else
+    //// 6. 订阅雷达和 IMU
     /*** ROS subscribe initialization ***/
     ros::Subscriber sub_pcl = p_pre->lidar_type == AVIA ? \
         nh.subscribe(lid_topic, 200000, livox_pcl_cbk) : \
         nh.subscribe(lid_topic, 200000, standard_pcl_cbk);
     ros::Subscriber sub_imu = nh.subscribe(imu_topic, 200000, imu_cbk);
-#endif
+    #endif
+
+    /// 7. 订阅 LTAOM 特有的闭环/子图信息
     ros::Subscriber sub_submap_id = nh.subscribe<std_msgs::Int32>("/submap_ids", 100, submap_id_cbk);
     ros::Subscriber sub_submap_pose = nh.subscribe<nav_msgs::Odometry>("/submap_pose", 100, submap_pose_cbk);
-#ifndef offline
-    ros::Subscriber sub_path_corrected = nh.subscribe<nav_msgs::Path>("/aft_pgo_path", 100, path_cor_cbk);
-#endif
+    #ifndef offline
+        ros::Subscriber sub_path_corrected = nh.subscribe<nav_msgs::Path>("/aft_pgo_path", 100, path_cor_cbk);
+    #endif
 
+    //// 8. 定义发布者
     pubLaserCloudFullCor = nh.advertise<sensor_msgs::PointCloud2>("/cloud_corrected", 100);
-//    pubOdomLargeJump = nh.advertise<nav_msgs::Odometry>("/odom_largejump", 10);
+    //    pubOdomLargeJump = nh.advertise<nav_msgs::Odometry>("/odom_largejump", 10);
     pubOdomCorrection = nh.advertise<std_msgs::Float32MultiArray>("/odom_correction_info", 10);
     pubOdomCorrection2 = nh.advertise<std_msgs::Float64MultiArray>("/odom_correction_info64", 10);
     pubTimeCorrection = nh.advertise<std_msgs::UInt64>("/time_correction", 10);
     pubCorrectionId = nh.advertise<visualization_msgs::MarkerArray>("/ids_corr", 10);
-//if (multisession_mode == 1){
+    //if (multisession_mode == 1){
     ros::Publisher pubPriorMap = nh.advertise<sensor_msgs::PointCloud2>("/cloud_prior", 100);
     ros::Publisher pubLCOnPriorMap = nh.advertise<sensor_msgs::PointCloud2>("/lc_cloud_prior", 100);
     ros::Subscriber sub_lc_onprior_id = nh.subscribe<std_msgs::Int32>("/ids_lc_onprior", 100, loopclosure_onprior_cbk);
-//}
+    //}
     ros::Publisher pubLaserCloudFullRes = nh.advertise<sensor_msgs::PointCloud2>
         ("/cloud_registered", 10000);
     ros::Publisher pubLaserCloudEffect  = nh.advertise<sensor_msgs::PointCloud2>
@@ -1692,29 +1716,34 @@ int main(int argc, char** argv)
         ("/aft_mapped_to_init", 10000);
     ros::Publisher pubPath          = nh.advertise<nav_msgs::Path>
             ("/path", 10);
+
+    // 9. 启动后台重建线程,根据优化后的结果重组地图（KD-Tree）
     std::thread extra_thread_for_rebuild {ikdtree_rebuild};
 
-#ifdef DEPLOY
-    ros::Publisher mavros_pose_publisher = nh.advertise<geometry_msgs::PoseStamped>("/mavros/vision_pose/pose", 10);
-#endif
+    #ifdef DEPLOY
+        ros::Publisher mavros_pose_publisher = nh.advertise<geometry_msgs::PoseStamped>("/mavros/vision_pose/pose", 10);
+    #endif
     PointCloudXYZI::Ptr priormap(new PointCloudXYZI());
-if (multisession_mode == 1)
-{
-    load_prior_map_and_info(priormap);
-}
-//------------------------------------------------------------------------------------------------------
+    if (multisession_mode == 1)
+    {
+        load_prior_map_and_info(priormap);  
+    }
+
+    // 10. 主循环开始
+    //------------------------------------------------------------------------------------------------------
     signal(SIGINT, SigHandle);
     ros::Rate rate(5000);
     bool status = ros::ok();
     while (status)
     {
         if (flg_exit) break;
-        ros::spinOnce();
-if (multisession_mode == 1)
-{
-        if (!priormap->empty()) pub_prior_map_one_time(pubPriorMap, priormap);
-}
+        ros::spinOnce(); //// 处理一次回调，收一下最新的消息
+        if (multisession_mode == 1)
+        {
+                if (!priormap->empty()) pub_prior_map_one_time(pubPriorMap, priormap);
+        }
 
+        //// 11. 数据同步
         if(sync_packages(Measures))
         {
             if (flg_reset)
@@ -1736,7 +1765,7 @@ if (multisession_mode == 1)
             {
                 unique_lock<std::mutex> my_unique_lock(mtx_ikdtreeptr);
                 sig_ikdtreeptr.wait(my_unique_lock, []{return !holding_for_ikdtreerebuild;});
-                p_imu->Process(Measures, kf, feats_undistort);
+                p_imu->Process(Measures, kf, feats_undistort); //// 12. IMU 预测 (先猜), 结果存在 feats_undistort 里
             }
             state_point = kf.get_x();
             pos_lid = state_point.pos + state_point.rot * state_point.offset_T_L_I;
@@ -1768,30 +1797,34 @@ if (multisession_mode == 1)
             flg_EKF_inited = (Measures.lidar_beg_time - first_lidar_time) < INIT_TIME ? \
                             false : true;
 
-//        #define DEBUG_PRINT
-        #ifdef DEBUG_PRINT
-            //state_ikfom debug_state = kf.get_x();
-            //euler_cur = RotMtoEuler(state_point.rot.toRotationMatrix());
-            euler_cur = SO3ToEuler(state_point.rot);
-            cout<<"current lidar time "<<Measures.lidar_beg_time<<" "<<"first lidar time "<<first_lidar_time<<endl;
-            cout<<"pre-integrated states: "<<euler_cur.transpose()*57.3<<" "<<state_point.pos.transpose()<<" "<<state_point.vel.transpose()<<" "<<state_point.bg.transpose()<<" "<<state_point.ba.transpose()<<endl;
-        #endif
+            //        #define DEBUG_PRINT
+            #ifdef DEBUG_PRINT
+                //state_ikfom debug_state = kf.get_x();
+                //euler_cur = RotMtoEuler(state_point.rot.toRotationMatrix());
+                euler_cur = SO3ToEuler(state_point.rot);
+                cout<<"current lidar time "<<Measures.lidar_beg_time<<" "<<"first lidar time "<<first_lidar_time<<endl;
+                cout<<"pre-integrated states: "<<euler_cur.transpose()*57.3<<" "<<state_point.pos.transpose()<<" "<<state_point.vel.transpose()<<" "<<state_point.bg.transpose()<<" "<<state_point.ba.transpose()<<endl;
+            #endif
+
+            //// 13. 地图动态裁剪, 就把视野外的点删掉，防止内存爆炸。
             /*** Segment the map in lidar FOV ***/
-            lasermap_fov_segment();
+            lasermap_fov_segment(); 
                 // fout_out << "Before seg- tree size: " << fov_rec_before[0] << " " << fov_rec_before[1] << " " << fov_rec_before[2] << endl;
                 // fout_out << "FoV seg - size : " << fov_size[0] << " " << fov_size[1] << " " << fov_size[2] << endl;
                 // fout_out << "After seg - tree size: " << fov_rec_after[0] << " " << fov_rec_after[1] << " " << fov_rec_after[2] << endl;
                 // cout << "Max Queue Size is : " << ikdtree.max_queue_size << endl;
                 // fout_out << "Point Cache Size: " << points_cache_size << endl;
+            
+            //// 14. 点云降采样
             /*** downsample the feature points in a scan ***/
-
             downSizeFilterSurf.setInputCloud(feats_undistort);
             downSizeFilterSurf.filter(*feats_down_body);
 
             t1 = omp_get_wtime();
             feats_down_size = feats_down_body->points.size();
-            /*** initialize the map kdtree ***/
 
+            // 15. IKD-Tree 初始化 (如果是第一帧)
+            /*** initialize the map kdtree ***/
             if(ikdtree_ptr->Root_Node == nullptr)
             {
                 if(feats_down_size > 5)
@@ -1831,6 +1864,7 @@ if (multisession_mode == 1)
 
             t2 = omp_get_wtime();
 
+            // 16. 核心解算：卡尔曼滤波更新 (后修) ;拿“降采样后的点云”去“地图”里找匹配，计算误差，然后修正
             /*** iterated state estimation ***/
             #ifdef MP_EN
             // cout<<"Using multi-processor, used core number: "<<MP_PROC_NUM<<endl;
@@ -1843,11 +1877,11 @@ if (multisession_mode == 1)
                 tmp_state = kf.get_x();
                 unique_lock<std::mutex> my_unique_lock(mtx_ikdtreeptr);
                 sig_ikdtreeptr.wait(my_unique_lock, []{return !holding_for_ikdtreerebuild;});
-                kf.update_iterated_dyn_share_modified(LASER_POINT_COV, solve_H_time);
+                kf.update_iterated_dyn_share_modified(LASER_POINT_COV, solve_H_time); 
             }
 
             //state_ikfom updated_state = kf.get_x();
-            state_point = kf.get_x();
+            state_point = kf.get_x();  //这一步跑完，kf.get_x() 里的位置就是当前最准的位置了。
             //euler_cur = RotMtoEuler(state_point.rot.toRotationMatrix());
             euler_cur = SO3ToEuler(state_point.rot);
             pos_lid = state_point.pos + state_point.rot * state_point.offset_T_L_I;
@@ -1857,38 +1891,41 @@ if (multisession_mode == 1)
             geoQuat.z = state_point.rot.coeffs()[2];
             geoQuat.w = state_point.rot.coeffs()[3];
             double t_update_end = omp_get_wtime();
-
+            
+            //// 17. 发布里程计 (告诉外界我在哪)
             /******* Publish odometry *******/
-//            ros::Time ros_time_tmp = ros::Time::fromNSec(Measures.lidar_beg_time);
-            publish_odometry(pubOdomAftMapped, Measures.lidar_beg_time);
+            //            ros::Time ros_time_tmp = ros::Time::fromNSec(Measures.lidar_beg_time);
+            publish_odometry(pubOdomAftMapped, Measures.lidar_beg_time); 
 
-#ifdef save_for_mapconsistency_eva
-            scan_poses_queue.push_back({Measures.lidar_beg_time, state_point.rot.toRotationMatrix(), state_point.pos});
-            extrinsics_queue.push_back({Measures.lidar_beg_time, state_point.offset_R_L_I.toRotationMatrix(), state_point.offset_T_L_I});
-            if (feats_undistort->size() > 0)
-            {
-                auto last_translation = state_point.pos;
-                ros::Time current_time = ros::Time().fromSec(Measures.lidar_beg_time);
-                sensor_msgs::PointCloud2 save_cloud;
-                pcl::toROSMsg(*feats_undistort, save_cloud);
-                save_cloud.header.frame_id = "camera_init";
-                save_cloud.header.stamp = current_time;
-                std::cout << "save frame:" << scan_poses_queue.size()
-                          << ", cloud size:" << feats_undistort->size() << std::endl;
-                bag.write("/cloud_undistort", current_time, save_cloud);
-            }
-#endif
+            #ifdef save_for_mapconsistency_eva
+                scan_poses_queue.push_back({Measures.lidar_beg_time, state_point.rot.toRotationMatrix(), state_point.pos});
+                extrinsics_queue.push_back({Measures.lidar_beg_time, state_point.offset_R_L_I.toRotationMatrix(), state_point.offset_T_L_I});
+                if (feats_undistort->size() > 0)
+                {
+                    auto last_translation = state_point.pos;
+                    ros::Time current_time = ros::Time().fromSec(Measures.lidar_beg_time);
+                    sensor_msgs::PointCloud2 save_cloud;
+                    pcl::toROSMsg(*feats_undistort, save_cloud);
+                    save_cloud.header.frame_id = "camera_init";
+                    save_cloud.header.stamp = current_time;
+                    std::cout << "save frame:" << scan_poses_queue.size()
+                            << ", cloud size:" << feats_undistort->size() << std::endl;
+                    bag.write("/cloud_undistort", current_time, save_cloud);
+                }
+            #endif
 
             /*** add the feature points to map kdtree ***/
             t3 = omp_get_wtime();
             // fout_out << "Before - tree size: " << ikdtree.validnum() << endl;
-
+            
+            // 18. 地图增量更新
             map_incremental();
 
             // fout_out << "After - tree size: " << ikdtree.validnum() << endl;
             t5 = omp_get_wtime();
             kdtree_size_end = ikdtree_ptr->size();
 
+            // 19. 发布点云 (给 Rviz 看)
             /******* Publish points *******/
             publish_frame_world(pubLaserCloudFullRes, Measures.lidar_beg_time);
             publish_effect_world(pubLaserCloudEffect);
@@ -1939,26 +1976,27 @@ if (multisession_mode == 1)
             }
         }
         status = ros::ok();
-        rate.sleep();
+        rate.sleep(); // 休息一下，控制循环频率
     }
-#ifndef DEPLOY
+    
+    #ifndef DEPLOY
     vector<double> t, s_vec, s_vec2, s_vec3, s_vec4, s_vec5, s_vec6, s_vec7;
     FILE *fp2;
-//    string log_dir = root_dir + "/Log/fast_lio_time_log.csv";
+    //    string log_dir = root_dir + "/Log/fast_lio_time_log.csv";
     string log_dir = save_directory + "fast_lio_time_log.csv";
     fp2 = fopen(log_dir.c_str(),"w");
     fprintf(fp2,"time_stamp, total time, scan point size, incremental time, search time, delete size, delete time, tree size st, tree size end, add point size, preprocess time\n");
-    for (int i = 0;i<time_log_counter; i++)
-    {
-        fprintf(fp2,"%0.8f,%0.8f,%d,%0.8f,%0.8f,%d,%0.8f,%d,%d,%d,%0.8f\n",T1[i],s_plot[i],int(s_plot2[i]),s_plot3[i],s_plot4[i],int(s_plot5[i]),s_plot6[i],int(s_plot7[i]),int(s_plot8[i]), int(s_plot10[i]), s_plot11[i]);
-        t.push_back(T1[i]);
-        s_vec.push_back(s_plot9[i]);
-        s_vec2.push_back(s_plot3[i] + s_plot6[i]);
-        s_vec3.push_back(s_plot4[i]);
-        s_vec5.push_back(s_plot[i]);
-    }
+        for (int i = 0;i<time_log_counter; i++)
+        {
+            fprintf(fp2,"%0.8f,%0.8f,%d,%0.8f,%0.8f,%d,%0.8f,%d,%d,%d,%0.8f\n",T1[i],s_plot[i],int(s_plot2[i]),s_plot3[i],s_plot4[i],int(s_plot5[i]),s_plot6[i],int(s_plot7[i]),int(s_plot8[i]), int(s_plot10[i]), s_plot11[i]);
+            t.push_back(T1[i]);
+            s_vec.push_back(s_plot9[i]);
+            s_vec2.push_back(s_plot3[i] + s_plot6[i]);
+            s_vec3.push_back(s_plot4[i]);
+            s_vec5.push_back(s_plot[i]);
+        }
     fclose(fp2);
-#endif
+    #endif
 
     return 0;
 }

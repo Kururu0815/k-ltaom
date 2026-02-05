@@ -10,7 +10,7 @@ using namespace std;
 typedef pcl::PointXYZINormal PointType;
 typedef pcl::PointCloud<PointType> PointCloudXYZI;
 
-enum LID_TYPE{AVIA = 1, VELO16, OUSTER, HESAI128, XGRIDS}; //{1, 2, 3}
+enum LID_TYPE{AVIA = 1, VELO16, OUSTER, HESAI128, XGRIDS, OUSTER_MULRAN}; //{1, 2, 3}
 enum Feature{Nor, Poss_Plane, Real_Plane, Edge_Jump, Edge_Plane, Wire, ZeroPoint};
 enum Surround{Prev, Next};
 enum E_jump{Nr_nor, Nr_zero, Nr_180, Nr_inf, Nr_blind};
@@ -56,10 +56,10 @@ namespace ouster_ros {
       PCL_ADD_POINT4D;
       float intensity;
       uint32_t t;
-      uint16_t reflectivity;
+      uint16_t reflectivity; // MulRan 没有
       uint8_t  ring;
-      uint16_t ambient;
-      uint32_t range;
+      uint16_t ambient; // MulRan 没有
+      uint32_t range; //MulRan 没有
       EIGEN_MAKE_ALIGNED_OPERATOR_NEW
   };
 }  // namespace ouster_ros
@@ -77,6 +77,29 @@ POINT_CLOUD_REGISTER_POINT_STRUCT(ouster_ros::Point,
     (std::uint16_t, ambient, ambient)
     (std::uint32_t, range, range)
 )
+
+
+// === 新增：专门给 MulRan 用的结构体 ===
+namespace mulran_ros {
+  struct EIGEN_ALIGN16 Point {
+      PCL_ADD_POINT4D;
+      float intensity;
+      uint32_t t;
+      int32_t ring; // MulRan 的 ring 是 int32 (datatype: 5)
+      EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  };
+}
+// 注册这个新结构体
+POINT_CLOUD_REGISTER_POINT_STRUCT(mulran_ros::Point,
+    (float, x, x)
+    (float, y, y)
+    (float, z, z)
+    (float, intensity, intensity)
+    (std::uint32_t, t, t)
+    (std::int32_t, ring, ring)
+)
+// =====================================
+
 
 namespace pandar128_ros {
 struct EIGEN_ALIGN16 Point {
@@ -120,6 +143,9 @@ class Preprocess
   private:
   void avia_handler(const livox_ros_driver::CustomMsg::ConstPtr &msg);
   void ouster_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
+
+  void mulran_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
+
   void velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
   void hesai128_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
   void give_feature(PointCloudXYZI &pl, vector<orgtype> &types);
