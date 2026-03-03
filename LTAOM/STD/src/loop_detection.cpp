@@ -1011,4 +1011,5 @@ if (multisession_mode == 2)
 }
     status = ros::ok();
   }
+    return 0;
 }

@@ -205,6 +205,7 @@ void KD_FOREST::stop_thread(){
 void * KD_FOREST::multi_thread_ptr(void * arg){
     KD_FOREST * handle = (KD_FOREST*) arg;
     handle->multi_thread_rebuild();
+    return nullptr;
 }    
 
 void KD_FOREST::multi_thread_rebuild(){
@@ -1093,16 +1094,19 @@ bool KD_FOREST::point_cmp_x(PointCubeIndexType a, PointCubeIndexType b) {
     if (fabs(a.center.x - b.center.x) > EPSS) return (a.center.x < b.center.x);  
     if (fabs(a.center.y - b.center.y) > EPSS) return (a.center.y < b.center.y);  
     if (fabs(a.center.z - b.center.z) > EPSS) return (a.center.z < b.center.z);  
+    return false;
 }
 bool KD_FOREST::point_cmp_y(PointCubeIndexType a, PointCubeIndexType b) {
     if (fabs(a.center.y - b.center.y) > EPSS) return (a.center.y < b.center.y);  
     if (fabs(a.center.x - b.center.x) > EPSS) return (a.center.x < b.center.x);  
     if (fabs(a.center.z - b.center.z) > EPSS) return (a.center.z < b.center.z);  
+    return false;
 }
 bool KD_FOREST::point_cmp_z(PointCubeIndexType a, PointCubeIndexType b){ 
     if (fabs(a.center.z - b.center.z) > EPSS) return (a.center.z < b.center.z);
     if (fabs(a.center.x - b.center.x) > EPSS) return (a.center.x < b.center.x);  
     if (fabs(a.center.y - b.center.y) > EPSS) return (a.center.y < b.center.y);  
+    return false;
 }
 void KD_FOREST::print_tree(int index, FILE *fp, float x_min, float x_max, float y_min, float y_max, float z_min, float z_max){
     pthread_mutex_lock(&working_flag_mutex);

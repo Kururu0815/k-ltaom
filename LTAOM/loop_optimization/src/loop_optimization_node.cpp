@@ -1,3 +1,5 @@
+#include <boost/serialization/version.hpp>
+#include <boost/serialization/library_version_type.hpp>
 /*This code is the implementation of our paper "LTA-OM: Long-Term Association
 LiDAR-Inertial Odometry and Mapping".
 
@@ -823,7 +825,7 @@ void optimize()
     opt_debug_file << "[Optimize]: running isam2 optimization ..." << endl;
     auto start1 = std::chrono::system_clock::now();
 //    printGraph(gts_graph_);
-    isam_->backup();         // self-defined isam function, you need to compile gtsam with provided note in Readme
+    // isam_->backup();         // self-defined isam function, you need to compile gtsam with provided note in Readme
 #ifdef marg
     if (!factors_toremove.empty() &&just_loop_closure)
     {
@@ -871,7 +873,7 @@ void optimize()
     {
         opt_debug_file <<  "[FPR]: reject, large residual appear." << std::endl;
 //        opt_debug_file << "origin isam values size = " << isam_->calculateEstimate().size() << std::endl;
-        isam_->recover();    // self-defined isam function, you need to compile gtsam with provided note in Readme
+        // isam_->recover();    // self-defined isam function, you need to compile gtsam with provided note in Readme
 
 //        complete_graph = isam_->getFactorsUnsafe();
 //        opt_debug_file << "aft recovered: " << std::endl;

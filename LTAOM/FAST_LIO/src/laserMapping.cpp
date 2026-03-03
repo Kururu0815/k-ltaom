@@ -242,7 +242,7 @@ void SigHandle(int sig)
     sig_buffer.notify_all();
 }
 
-inline void dump_lio_state_to_log(FILE *fp)
+void dump_lio_state_to_log(FILE *fp) // Fixed
 {
     //state_ikfom write_state = kf.get_x();
     V3D rot_ang(Log(state_point.rot.toRotationMatrix()));
@@ -1965,7 +1965,7 @@ int mainLIOFunction()
             ext_euler = SO3ToEuler(state_point.offset_R_L_I);
             fout_out << setw(20) << Measures.lidar_beg_time - first_lidar_time << " " << euler_cur.transpose() << " " << state_point.pos.transpose()<< " " << ext_euler.transpose() << " "<<state_point.offset_T_L_I.transpose()<<" "<< state_point.vel.transpose() \
             <<" "<<state_point.bg.transpose()<<" "<<state_point.ba.transpose()<<" "<<state_point.grav<<" "<<feats_undistort->points.size()<<endl;
-            dump_lio_state_to_log(fp);
+            // // dump_lio_state_to_log(fp);
             if (do_posecorrection)  // In case setKF not success
             {
                   do_posecorrection = false;

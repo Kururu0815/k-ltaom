@@ -1,3 +1,5 @@
+#include <boost/serialization/version.hpp>
+#include <boost/serialization/library_version_type.hpp>
 /*This code is the implementation of our paper "LTA-OM: Long-Term Association
  LiDAR-Inertial Odometry and Mapping".
 

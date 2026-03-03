@@ -1,3 +1,5 @@
+#include <boost/serialization/version.hpp>
+#include <boost/serialization/library_version_type.hpp>
 #include "extra_lib.h"
 
 namespace ExtraLib {
