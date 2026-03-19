@@ -10,7 +10,7 @@ using namespace std;
 typedef pcl::PointXYZINormal PointType;
 typedef pcl::PointCloud<PointType> PointCloudXYZI;
 
-enum LID_TYPE{AVIA = 1, VELO16, OUSTER, HESAI128, XGRIDS, OUSTER_MULRAN}; //{1, 2, 3}
+enum LID_TYPE{AVIA = 1, VELO16, OUSTER, HESAI128, XGRIDS, OUSTER_MULRAN, OUSTER_GEODE}; //{1, 2, 3}
 enum Feature{Nor, Poss_Plane, Real_Plane, Edge_Jump, Edge_Plane, Wire, ZeroPoint};
 enum Surround{Prev, Next};
 enum E_jump{Nr_nor, Nr_zero, Nr_180, Nr_inf, Nr_blind};
@@ -145,6 +145,7 @@ class Preprocess
   void ouster_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
 
   void mulran_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
+  void geode_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
 
   void velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);
   void hesai128_handler(const sensor_msgs::PointCloud2::ConstPtr &msg);

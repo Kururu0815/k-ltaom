@@ -1663,10 +1663,10 @@ int mainLIOFunction()
     fout_pre.open(DEBUG_FILE_DIR("mat_pre.txt"),ios::out);
     fout_out.open(DEBUG_FILE_DIR("mat_out.txt"),ios::out);
     fout_dbg.open(save_directory + "lio_debug.txt",ios::out);
-    if (fout_pre && fout_out)
-        cout << "~~~~"<<ROOT_DIR<<" file opened" << endl;
-    else
-        cout << "~~~~"<<ROOT_DIR<<" doesn't exist" << endl;
+    //if (fout_pre && fout_out)
+    //    cout << "~~~~"<<ROOT_DIR<<" file opened" << endl;
+    //else
+    //    cout << "~~~~"<<ROOT_DIR<<" doesn't exist" << endl;
 
     time_ikdrebuild_thread.open(save_directory + "times_ikdrebuild_LTAOM.txt",ios::out);
     time_ikdrebuild_thread.precision(std::numeric_limits<double>::max_digits10);

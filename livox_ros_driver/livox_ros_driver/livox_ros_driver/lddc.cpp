@@ -1,3 +1,4 @@
+#include <pcl_ros/point_cloud.h>
 //
 // The MIT License (MIT)
 //

@@ -1,0 +1,57 @@
+####################################################################
+
+# # 使用外部部imu InvenSense ICM-20948@100Hz 启用下面的参数
+
+common:
+    lid_topic:  "/ouster/points"
+    imu_topic:  "/imu/data"
+    time_sync_en: false        # ONLY turn on when external time synchronization is really not possible
+
+preprocess:
+    lidar_type: 7               # 在 preprocess.h 的枚举里：AVIA=1, VELO16=2, OUSTER=3, HESAI128=4, XGRIDS=5。所以我们新加的 OUSTER_GEODE 应该是 7。
+    scan_line: 64
+    blind: 4
+
+mapping:
+    acc_cov: 0.1
+    gyr_cov: 0.1
+    b_acc_cov: 0.0001
+    b_gyr_cov: 0.0001
+    fov_degree:    180
+    det_range:     150.0
+# 从 T_IMU_LiDAR 提取的位移 (x, y, z)
+    extrinsic_T: [-0.027172, -0.034873, 0.062643]
+    
+# 这是 T_IMU_LiDAR 的转置（行变列）
+    extrinsic_R: [ 0.998638, -0.051937,  0.004994,
+                   0.052001,  0.998554, -0.013659,
+                  -0.004278,  0.013900,  0.999894]
+
+####################################################################
+
+# # 使用ouster内部imu启用下面的参数
+
+# publish:
+#     scan_publish_en:  true       # 'false' will close all the point cloud output
+#     dense_publish_en: true       # false will low down the points number in a global-frame point clouds scan.
+#     scan_bodyframe_pub_en: true  # output the point cloud scans in IMU-body-frame
+# common:
+#     lid_topic:  "/ouster/points"
+#     imu_topic:  "/ouster/imu"
+#     time_sync_en: false         # ONLY turn on when external time synchronization is really not possible
+# preprocess:
+#     lidar_type: 7               # 在 preprocess.h 的枚举里：AVIA=1, VELO16=2, OUSTER=3, HESAI128=4, XGRIDS=5。所以我们新加的 OUSTER_GEODE 应该是 7。
+#     scan_line: 64
+#     blind: 4
+# mapping:
+#     acc_cov: 0.1
+#     gyr_cov: 0.1
+#     b_acc_cov: 0.0001
+#     b_gyr_cov: 0.0001
+#     fov_degree:    180
+#     det_range:     150.0
+#     extrinsic_T: [ 0.0, 0.0, 0.0 ]
+#     extrinsic_R: [1, 0, 0,
+#                   0, 1, 0,
+#                   0, 0, 1]
+

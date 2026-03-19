@@ -68,6 +68,10 @@ void Preprocess::process(const sensor_msgs::PointCloud2::ConstPtr &msg, PointClo
     case OUSTER_MULRAN:
       mulran_handler(msg);
       break;
+
+     case OUSTER_GEODE:
+      geode_handler(msg);
+      break;
     // ===============
 
   default:
@@ -447,6 +451,83 @@ void Preprocess::mulran_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
     ROS_INFO_THROTTLE(2.0, "MulRan Handler: Processed %lu points. First time: %.2f ms", pl_surf.size(), pl_surf.points.empty() ? 0.0 : pl_surf.points[0].curvature);
 }
 
+void Preprocess::geode_handler(const sensor_msgs::PointCloud2::ConstPtr &msg) {
+    // 1. 初始化并清空缓存
+    pl_surf.clear();
+    pl_corn.clear();
+    pl_full.clear();
+
+    // 2. 定义变量（解决编译错误的关键！）
+    int num_points = msg->width * msg->height;
+    int point_step = msg->point_step; 
+    const uint8_t* base_ptr = msg->data.data(); 
+
+    // 3. 动态查找字段偏移量
+    int off_x = -1, off_y = -1, off_z = -1, off_i = -1, off_t = -1, off_ring = -1;
+    for (const auto& field : msg->fields) {
+        if (field.name == "x") off_x = field.offset;
+        else if (field.name == "y") off_y = field.offset;
+        else if (field.name == "z") off_z = field.offset;
+        else if (field.name == "intensity") off_i = field.offset;
+        else if (field.name == "t") off_t = field.offset;
+        else if (field.name == "ring") off_ring = field.offset;
+    }
+
+    // 检查核心字段
+    if (off_x == -1 || off_y == -1 || off_z == -1 || off_t == -1) {
+        ROS_ERROR_THROTTLE(1.0, "GEODE Handler: Missing vital fields!");
+        return;
+    }
+
+    pl_surf.reserve(num_points);
+
+    // 4. 核心解析循环
+    for (int i = 0; i < num_points; i++) {
+        const uint8_t* ptr = base_ptr + i * point_step;
+
+        // 降采样
+        if (i % point_filter_num != 0) continue;
+
+        float x, y, z, intensity;
+        uint32_t t_raw;
+        uint16_t ring_raw = 0;
+
+        memcpy(&x, ptr + off_x, sizeof(float));
+        memcpy(&y, ptr + off_y, sizeof(float));
+        memcpy(&z, ptr + off_z, sizeof(float));
+        
+        // 盲区过滤
+        if ((x*x + y*y + z*z) < blind) continue;
+
+        if (off_i != -1) memcpy(&intensity, ptr + off_i, sizeof(float));
+        else intensity = 0.0f;
+
+        // 解析 GEODE 的 uint32 纳秒时间戳
+        memcpy(&t_raw, ptr + off_t, sizeof(uint32_t));
+        
+        // 解析线数 (如果有)
+        if (off_ring != -1) memcpy(&ring_raw, ptr + off_ring, sizeof(uint16_t));
+
+        // 5. 组装点云
+        PointType added_pt;
+        added_pt.x = x;
+        added_pt.y = y;
+        added_pt.z = z;
+        added_pt.intensity = intensity;
+        added_pt.normal_x = 0;
+        added_pt.normal_y = 0;
+        added_pt.normal_z = 0;
+        
+        // 关键：纳秒(ns)转毫秒(ms)，存入 curvature 供算法去畸变
+        added_pt.curvature = t_raw / 1000000.0; 
+
+        pl_surf.points.push_back(added_pt);
+    }
+    
+    // 打印进度，证明它在工作
+    ROS_INFO_THROTTLE(2.0, "GEODE Handler: Processed %lu points. Start time: %.2f ms", 
+                      pl_surf.size(), pl_surf.points.empty() ? 0.0 : pl_surf.points[0].curvature);
+}
 
 
 void Preprocess::velodyne_handler(const sensor_msgs::PointCloud2::ConstPtr &msg)
