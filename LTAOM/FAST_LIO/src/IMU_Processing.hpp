@@ -28,7 +28,7 @@
 #include "use-ikfom.hpp"
 #endif
 
-//std::ofstream outfile("/home/zuhaozou/ws_LTAOM/logs/matrix_log_LTA.txt");
+//std::ofstream outfile("/home/k/ws_LTAOM/logs/matrix_log_LTA.txt");
 
 /// *************Preconfiguration
 

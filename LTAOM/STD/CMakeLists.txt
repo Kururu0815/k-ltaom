@@ -39,7 +39,7 @@ catkin_package(
  CATKIN_DEPENDS roscpp rospy std_msgs
 )
 
-#set(LIB_OPENCV_IMGPROC_DIR /home/zuhaozou/tbb) //原始路径问题
+#set(LIB_OPENCV_IMGPROC_DIR /home/k/tbb) //原始路径问题
 #add_library(libtbb SHARED IMPORTED)
 #set_target_properties(libtbb PROPERTIES IMPORTED_LOCATION ${LIB_OPENCV_IMGPROC_DIR}/build/my_tbb_build_release/libtbb.so.2)
 

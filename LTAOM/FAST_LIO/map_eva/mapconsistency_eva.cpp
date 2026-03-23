@@ -70,7 +70,7 @@ Dr. Fu Zhang < fuzhang@hku.hk >.
 #include <rosbag/view.h>
 #define PI 3.14159265
 //#define liosam
-//std::ofstream outfile("/home/zuhaozou/ws_LTAOM/logs/map_eva.txt");
+//std::ofstream outfile("/home/k/ws_LTAOM/logs/map_eva.txt");
 
 Eigen::Quaterniond EulerToEigenQuat(double roll, double pitch, double yaw){
   double c1 = cos(roll*0.5);

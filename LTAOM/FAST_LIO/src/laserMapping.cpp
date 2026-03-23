@@ -510,15 +510,15 @@ bool sync_packages(MeasureGroup &meas)
 #ifdef LoadBag
 void msg_callbacks(){
 #ifdef nclt
-  std::string bag_path = "/home/zuhaozou/bag_local/nclt/vel_xu_0526.bag";
+  std::string bag_path = "/home/k/bag_local/nclt/vel_xu_0526.bag";
 #else
 
 #ifdef avia_indoor
-  std::string bag_path = "/media/zuhaozou/zuhaozou_ssd/rosbag/MarS/Multi-floor building/floor7.bag";
+  std::string bag_path = "/media/k/k_ssd/rosbag/MarS/Multi-floor building/floor7.bag";
 #else
-//  std::string bag_path = "/home/zuhaozou/bag_local/mulran/DCC02_raw.bag";
-//    std::string bag_path = "/home/zuhaozou/bag_local/mulran/KAIST03_raw.bag";
-  std::string bag_path = "/home/zuhaozou/bag_local/mulran/river02_raw.bag";
+//  std::string bag_path = "/home/k/bag_local/mulran/DCC02_raw.bag";
+//    std::string bag_path = "/home/k/bag_local/mulran/KAIST03_raw.bag";
+  std::string bag_path = "/home/k/bag_local/mulran/river02_raw.bag";
 #endif
 
 #endif

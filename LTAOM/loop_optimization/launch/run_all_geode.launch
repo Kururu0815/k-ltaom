@@ -28,6 +28,9 @@
     <param name="dy_mapretrival_range" type="double" value="50" />
 
     <rosparam command="load" file="$(find loop_optimization)/launch/loopopt_config_mulran.yaml" />
+   <!--node pkg="nodelet" type="nodelet" args="standalone loop_optimization/loop_optimization_plugin sample_nodelet_manager"
+        name="loop_optimization_plugin_loader" output="screen">
+    </node-->
 
     <param name="lcd_config_path" type="string" value="$(find std_loop)/config/config_velo_mulran.yaml" />
     <arg name="node_start_delay" default="1.0" /> 

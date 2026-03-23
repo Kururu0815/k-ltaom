@@ -414,11 +414,11 @@ void pubPath()
 //  if (loop_corr_counter!=2) return;
     nav_msgs::Odometry odomAftPGO;
     nav_msgs::PathPtr pathAftPGO (new nav_msgs::Path());
-    pathAftPGO->header.frame_id = "/camera_init"; //"/world";
+    pathAftPGO->header.frame_id = "camera_init"; //"/world";
     for (int i=0; i < keyframes_.size(); i++)
     {
         nav_msgs::Odometry odomAftPGOthis;
-        odomAftPGOthis.header.frame_id = "/camera_init"; //"/world";
+        odomAftPGOthis.header.frame_id = "camera_init"; //"/world";
         odomAftPGOthis.child_frame_id = "/aft_pgo";
         odomAftPGOthis.header.stamp = keyframes_[i].KeyTime;
         odomAftPGOthis.header.seq = i;
@@ -433,7 +433,7 @@ void pubPath()
         poseStampAftPGO.pose = odomAftPGOthis.pose.pose;
 
         pathAftPGO->header.stamp = odomAftPGOthis.header.stamp;
-        pathAftPGO->header.frame_id = "/camera_init"; //"/world";
+        pathAftPGO->header.frame_id = "camera_init"; //"/world";
         pathAftPGO->poses.push_back(poseStampAftPGO);
     }
     pubPathAftPGO.publish(pathAftPGO);
@@ -444,7 +444,7 @@ void pubPath()
 visualization_msgs::Marker lines_;
 void pubLoopClosureVisualization(const int prev_idx, const int curr_idx){
     lines_.header.stamp = ros::Time::now();
-    lines_.header.frame_id = "/camera_init"; //"/world";
+    lines_.header.frame_id = "camera_init"; //"/world";
     lines_.ns = "loopclosure_lines";
     lines_.action = visualization_msgs::Marker::ADD;
     lines_.pose.orientation.w = 1.0f;
@@ -1572,7 +1572,7 @@ void pubAndSaveGloablMap(bool savemap = true)
     //DownsampleCloud(fullMapToSave, 0.5); // !!!be careful about resolution, too small will cause memory bug or ros message error.
     sensor_msgs::PointCloud2 laserCloudMapPGOMsg;
     pcl::toROSMsg(fullMapToSave, laserCloudMapPGOMsg);
-    laserCloudMapPGOMsg.header.frame_id = "/camera_init";
+    laserCloudMapPGOMsg.header.frame_id = "camera_init";
     if (pubAndSaveGloablMapAftPGO.getNumSubscribers() != 0)
         pubAndSaveGloablMapAftPGO.publish(laserCloudMapPGOMsg);
     ros::spinOnce();
